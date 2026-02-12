@@ -1041,12 +1041,19 @@ def bootstrap_state_from_transitions(
         return False
 
     last = scoped[-1]
+    # Preserve state-duration continuity by anchoring start time to the latest
+    # actual state change, not confidence-only self-transition rows.
+    last_change = None
+    for t in reversed(scoped):
+        if (t.old_state or "").strip() != (t.new_state or "").strip():
+            last_change = t
+            break
     conf_label = normalize_conf_label(last.conf_now)
     conf_value_map = {"low": 0.30, "med": 0.60, "high": 0.90}
     conf_value = conf_value_map.get(conf_label, 0.30)
 
     state.current_state = last.new_state or ""
-    state.state_started_at = last.timestamp_utc
+    state.state_started_at = (last_change.timestamp_utc if last_change is not None else last.timestamp_utc)
     state.current_conf_label = conf_label
     state.current_conf_value = conf_value
     state.current_threshold_mode = threshold_mode
