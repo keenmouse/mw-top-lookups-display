@@ -1010,6 +1010,57 @@ def should_skip_transition_duplicate(path: str, old_state: str, new_state: str, 
         return False
 
 
+def normalize_conf_label(raw: str) -> str:
+    txt = (raw or "").strip().lower()
+    if txt.startswith("high"):
+        return "high"
+    if txt.startswith("med"):
+        return "med"
+    if txt.startswith("low"):
+        return "low"
+    return "low"
+
+
+def normalize_conf_trend(raw: str) -> str:
+    txt = (raw or "").strip().lower()
+    if txt == "rising":
+        return "rising"
+    if txt == "falling":
+        return "falling"
+    return ""
+
+
+def bootstrap_state_from_transitions(
+    state: State,
+    transitions: List[StateTransitionPoint],
+    window_minutes: int,
+    threshold_mode: str,
+) -> bool:
+    scoped = [t for t in transitions if t.window_minutes == window_minutes]
+    if not scoped:
+        return False
+
+    last = scoped[-1]
+    conf_label = normalize_conf_label(last.conf_now)
+    conf_value_map = {"low": 0.30, "med": 0.60, "high": 0.90}
+    conf_value = conf_value_map.get(conf_label, 0.30)
+
+    state.current_state = last.new_state or ""
+    state.state_started_at = last.timestamp_utc
+    state.current_conf_label = conf_label
+    state.current_conf_value = conf_value
+    state.current_threshold_mode = threshold_mode
+    state.pending_state = ""
+    state.pending_count = 0
+    state.transition_banner_once = ""
+    state.conf_drift_suffix = normalize_conf_trend(last.conf_trend)
+    state.conf_history = [conf_value, conf_value, conf_value, conf_value]
+    state.conf_delta = 0.0
+    state.conf_up_streak = 0
+    state.conf_down_streak = 0
+    return True
+
+
 def point_key_for_window(snapshots: List[Snapshot], meta_points: List[MetaPoint], window_minutes: int) -> str:
     scoped = [p for p in meta_points if p.metric_window_minutes == window_minutes]
     if scoped:
@@ -1074,24 +1125,32 @@ def update_runtime_state(
     transition_csv_path: str,
 ) -> None:
     if state.last_state_window_minutes != state.window_minutes:
+        # On window changes, bootstrap from persisted transition history when available.
+        restored = bootstrap_state_from_transitions(
+            state=state,
+            transitions=load_state_transitions(transition_csv_path),
+            window_minutes=state.window_minutes,
+            threshold_mode=threshold_mode,
+        )
         state.last_state_window_minutes = state.window_minutes
-        state.current_state = candidate_state
-        state.current_conf_label = conf_label
-        state.current_conf_value = conf_value
-        state.current_threshold_mode = threshold_mode
-        state.state_started_at = now_utc
         state.prev_state = ""
         state.prev_state_duration_sec = 0.0
-        state.pending_state = ""
-        state.pending_count = 0
         state.last_state_point_key = point_key
-        state.transition_banner_once = ""
-        state.conf_history = []
-        state.conf_delta = 0.0
-        state.conf_drift_suffix = ""
-        state.conf_up_streak = 0
-        state.conf_down_streak = 0
-        update_confidence_drift(state, conf_value)
+        if not restored:
+            state.current_state = candidate_state
+            state.current_conf_label = conf_label
+            state.current_conf_value = conf_value
+            state.current_threshold_mode = threshold_mode
+            state.state_started_at = now_utc
+            state.pending_state = ""
+            state.pending_count = 0
+            state.transition_banner_once = ""
+            state.conf_history = []
+            state.conf_delta = 0.0
+            state.conf_drift_suffix = ""
+            state.conf_up_streak = 0
+            state.conf_down_streak = 0
+            update_confidence_drift(state, conf_value)
         return
 
     if not state.current_state:
@@ -2476,6 +2535,17 @@ def main() -> int:
     if 60 in WINDOW_PRESETS_MINUTES:
         state.window_idx = WINDOW_PRESETS_MINUTES.index(60)
     state.last_state_window_minutes = state.window_minutes
+    # Restore state continuity across restarts when transition history exists.
+    startup_transitions = load_state_transitions(args.state_log_csv)
+    startup_meta_points = load_meta_points(args.meta_csv)
+    startup_scoped = [p for p in startup_meta_points if p.metric_window_minutes == state.window_minutes]
+    startup_threshold_mode = "adaptive" if len(startup_scoped) >= 60 else "fallback"
+    bootstrap_state_from_transitions(
+        state=state,
+        transitions=startup_transitions,
+        window_minutes=state.window_minutes,
+        threshold_mode=startup_threshold_mode,
+    )
     poll_index = get_max_poll_index(args.csv)
     today_local = datetime.now().astimezone()
     keep_days = retain_days
