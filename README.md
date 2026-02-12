@@ -148,6 +148,17 @@ Meta page: cycles focused metric-help target and pointer.
 - `global`: all term sparklines share one scale (best absolute comparability).
 - `global-sqrt`: global scale with square-root compression (reduces domination by extreme values while preserving comparability).
 
+## System State
+
+- `System State` is inferred from meta metrics (entropy, concentration, novelty, turnover, freshness) using adaptive thresholds when enough history is available, otherwise fallback thresholds.
+- Header duration (`active for ...`) is how long the current state has been active.
+- On startup, the app restores state continuity from historical transition logs for the selected window when available.
+- In `RECENT STATE CHANGES`, the duration shown after the `from` state is how long that state lasted before transitioning.
+- Trend symbols in transition rows represent confidence-direction drift only:
+  - `▲` rising
+  - `●` flat
+  - `▼` falling
+
 ## Metrics Notes
 
 - Freshness Ratio is shown as:
