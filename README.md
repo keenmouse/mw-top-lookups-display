@@ -76,6 +76,9 @@ ANSI color mode.
 - `--once`
 Render once and exit.
 
+- `--start-fresh`
+Clear terms/meta/state logs at startup, then continue running.
+
 ## Keyboard Controls
 
 - `+` / `-`: Increase or decrease selected time window.
@@ -177,6 +180,12 @@ Run with defaults:
 
 ```powershell
 python MWTopLookupsDisplay.py
+```
+
+Start fresh (clear logs first), then run:
+
+```powershell
+python MWTopLookupsDisplay.py --start-fresh
 ```
 
 Use custom log directory and 14-day retention:
