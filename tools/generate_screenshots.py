@@ -184,11 +184,35 @@ def main() -> int:
     meta_points = mod.load_meta_points(str(meta))
     transitions = mod.load_state_transitions(str(state_path))
 
+    def initialize_runtime_state(s: object) -> None:
+        # Match app startup behavior for historical continuity in headers.
+        scoped = [p for p in meta_points if p.metric_window_minutes == s.window_minutes]
+        threshold_mode = "adaptive" if len(scoped) >= 60 else "fallback"
+        restored = mod.bootstrap_state_from_transitions(
+            state=s,
+            transitions=transitions,
+            window_minutes=s.window_minutes,
+            threshold_mode=threshold_mode,
+        )
+        if restored:
+            return
+        # Fallback: compute current state from available data if no transition history exists.
+        adjusted = [mod.apply_filter_and_normalization(x, s.filter_sticky, s.normalize, set()) for x in snapshots]
+        if adjusted:
+            current_meta = mod.compute_meta_metrics(adjusted, s.window_minutes)
+            state_name, conf_label, conf_value, adaptive = mod.classify_system_state(current_meta, scoped)
+            s.current_state = state_name
+            s.current_conf_label = conf_label
+            s.current_conf_value = conf_value
+            s.current_threshold_mode = "adaptive" if adaptive else "fallback"
+            s.state_started_at = adjusted[-1].ts_utc
+
     state_main = mod.State()
     if 60 in mod.WINDOW_PRESETS_MINUTES:
         state_main.window_idx = mod.WINDOW_PRESETS_MINUTES.index(60)
     state_main.screen_mode = "main"
     state_main.compact_header = False
+    initialize_runtime_state(state_main)
     main_text = mod.build_render(
         snapshots=snapshots,
         state=state_main,
@@ -207,6 +231,7 @@ def main() -> int:
         state_meta.window_idx = mod.WINDOW_PRESETS_MINUTES.index(60)
     state_meta.screen_mode = "meta"
     state_meta.compact_header = False
+    initialize_runtime_state(state_meta)
     meta_text = mod.build_render_meta(
         meta_points=meta_points,
         transitions=transitions,
