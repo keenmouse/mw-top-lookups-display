@@ -1784,7 +1784,7 @@ def build_render(
         total_selected = float(meta.get("total_score_selected", 0.0))
         agg_freshness_window = (float(meta.get("total_score_10m", 0.0)) / total_selected) if total_selected > 0 else 0.0
         header_lines.append(
-            f"{short_metric_label('spike_ratio', width)} (10m/{format_window_label(state.window_minutes)}): {agg_freshness_window * 100.0:.1f}%"
+            f"Aggregate Freshness Ratio (10m/{format_window_label(state.window_minutes)}): {agg_freshness_window * 100.0:.1f}%"
         )
         header_lines.append(
             f"{short_metric_label('entropy_selected', width)} ({format_window_label(state.window_minutes)}): {meta['entropy_selected']:.2f}"
@@ -1975,6 +1975,16 @@ def build_render(
             return [section[0]]
         return section[:budget]
 
+    def interleave_blank_lines(lines: List[str]) -> List[str]:
+        if len(lines) <= 1:
+            return list(lines)
+        out: List[str] = []
+        for i, line in enumerate(lines):
+            out.append(line)
+            if i < len(lines) - 1:
+                out.append("")
+        return out
+
     out_lines: List[str] = list(header_lines)
     remaining = content_rows
 
@@ -1993,13 +2003,30 @@ def build_render(
             can_show_history = remaining >= min_with_history and len(history_item_lines) >= 3 and len(trend_item_lines) >= 3
 
             if can_show_history:
-                pair_budget = (remaining - len(trend_prefix) - len(history_prefix)) // 2
-                pair_count = max(0, min(pair_budget, len(trend_item_lines), len(history_item_lines)))
+                item_budget = remaining - len(trend_prefix) - len(history_prefix)
+                max_items = min(len(trend_item_lines), len(history_item_lines))
+
+                # If space allows at least 10 terms with blank separators in HISTORY, prefer that.
+                # Cost model:
+                # - TREND uses p rows
+                # - HISTORY uses leading blank + interleaved rows: (2*p) rows
+                # Total item rows = 3*p
+                spaced_pair_limit = item_budget // 3
+                use_spaced_history = min(spaced_pair_limit, max_items) >= 10
+
+                if use_spaced_history:
+                    pair_count = min(spaced_pair_limit, max_items)
+                    history_rows = [""] + interleave_blank_lines(history_item_lines[:pair_count])
+                else:
+                    pair_budget = item_budget // 2
+                    pair_count = max(0, min(pair_budget, max_items))
+                    history_rows = history_item_lines[:pair_count]
+
                 if pair_count >= 3:
                     out_lines.extend(trend_prefix)
                     out_lines.extend(trend_item_lines[:pair_count])
                     out_lines.extend(history_prefix)
-                    out_lines.extend(history_item_lines[:pair_count])
+                    out_lines.extend(history_rows)
                 else:
                     can_show_history = False
 
