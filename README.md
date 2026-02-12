@@ -235,6 +235,12 @@ Main app: logger, analytics, rendering, controls.
 - `README.md`
 Project documentation.
 
+- `CHANGELOG.md`
+Release-to-release change history.
+
+- `VERSION`
+Current project version.
+
 ## Troubleshooting
 
 - Terminal too small:
@@ -252,3 +258,10 @@ Use `--color on`.
 ## License
 
 This project is licensed under the [MIT License](LICENSE).
+
+## Versioning and Releases
+
+- This project uses Semantic Versioning (`MAJOR.MINOR.PATCH`).
+- Current version is defined in `VERSION`.
+- Release history is tracked in `CHANGELOG.md`.
+- GitHub releases are tagged as `v<version>` (for example, `v0.1.0`) with release notes.
