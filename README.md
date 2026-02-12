@@ -220,4 +220,4 @@ Use `--color on`.
 
 ## License
 
-No license file is currently included. Add one if you plan to distribute publicly.
+This project is licensed under the MIT License. See `LICENSE`.
