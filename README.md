@@ -96,6 +96,7 @@ Meta page: cycles focused metric-help target and pointer.
 - `Metric (M: next): ...` shows metric meaning and interaction cue.
 - `HISTORY (<window>), Scaling (S: next): ...` shows per-term sparklines.
 - Sparklines include gap markers for missing log intervals (shown in the legend as `░ gap (missing logs)`).
+- If terminal height allows at least 7 paired term rows, both TREND and HISTORY switch to spaced layout (blank line above the first term and between term rows) for readability.
 - In compact mode, non-essential header lines are hidden.
 
 ### Main metric modes (`M`)

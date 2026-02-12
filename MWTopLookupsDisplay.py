@@ -2006,25 +2006,27 @@ def build_render(
                 item_budget = remaining - len(trend_prefix) - len(history_prefix)
                 max_items = min(len(trend_item_lines), len(history_item_lines))
 
-                # If space allows at least 10 terms with blank separators in HISTORY, prefer that.
+                # If space allows at least 7 terms with blank separators in both TREND and HISTORY, prefer that.
                 # Cost model:
-                # - TREND uses p rows
+                # - TREND uses leading blank + interleaved rows: (2*p) rows
                 # - HISTORY uses leading blank + interleaved rows: (2*p) rows
-                # Total item rows = 3*p
-                spaced_pair_limit = item_budget // 3
-                use_spaced_history = min(spaced_pair_limit, max_items) >= 10
+                # Total item rows = 4*p
+                spaced_pair_limit = item_budget // 4
+                use_spaced_history = min(spaced_pair_limit, max_items) >= 7
 
                 if use_spaced_history:
                     pair_count = min(spaced_pair_limit, max_items)
+                    trend_rows = [""] + interleave_blank_lines(trend_item_lines[:pair_count])
                     history_rows = [""] + interleave_blank_lines(history_item_lines[:pair_count])
                 else:
                     pair_budget = item_budget // 2
                     pair_count = max(0, min(pair_budget, max_items))
+                    trend_rows = trend_item_lines[:pair_count]
                     history_rows = history_item_lines[:pair_count]
 
                 if pair_count >= 3:
                     out_lines.extend(trend_prefix)
-                    out_lines.extend(trend_item_lines[:pair_count])
+                    out_lines.extend(trend_rows)
                     out_lines.extend(history_prefix)
                     out_lines.extend(history_rows)
                 else:
