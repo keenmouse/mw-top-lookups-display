@@ -1083,16 +1083,13 @@ def update_runtime_state(
                 f"(after {format_duration(old_duration)}) at {format_local_dt(now_utc, include_date=False)}"
             )
             if logger_enabled:
-                conf_display = conf_label
-                if state.conf_drift_suffix:
-                    conf_display = f"{conf_label} ({state.conf_drift_suffix})"
                 append_state_transition_csv(
                     path=transition_csv_path,
                     timestamp_utc=now_utc,
                     old_state=old_state,
                     new_state=candidate_state,
                     old_duration_sec=old_duration,
-                    conf_now=conf_display,
+                    conf_now=conf_label,
                     conf_delta=state.conf_delta,
                     conf_trend=state.conf_drift_suffix or "flat",
                     window_minutes=state.window_minutes,
@@ -2235,6 +2232,7 @@ def build_render_meta(
                 to_dot = f"\x1b[{to_code}m●\x1b[0m"
             ts_short = t.timestamp_utc.astimezone().strftime("%H:%M:%S")
             conf_part = t.conf_now or "unknown"
+            conf_part = re.sub(r"\s*\((?:rising|falling|flat)\)\s*$", "", conf_part, flags=re.IGNORECASE)
             trend_raw = (t.conf_trend or "flat").lower()
             if trend_raw == "rising":
                 trend_part = "▲"
