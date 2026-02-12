@@ -16,8 +16,7 @@ It continuously polls the lookup endpoint, writes rotated CSV logs, computes tre
 
 ## Runtime Behavior
 
-- Logger is always ON during runtime.
-- There is no runtime key to disable logging.
+- The app logs continuously while it is running.
 - Running with no arguments launches immediately using defaults.
 
 ## Requirements
@@ -96,7 +95,15 @@ Meta page: cycles focused metric-help target and pointer.
 - `TREND (<window>)` shows the selected metric bars.
 - `Metric (M: next): ...` shows metric meaning and interaction cue.
 - `HISTORY (<window>), Scaling (S: next): ...` shows per-term sparklines.
+- Sparklines include gap markers for missing log intervals (shown in the legend as `░ gap (missing logs)`).
 - In compact mode, non-essential header lines are hidden.
+
+### Main metric modes (`M`)
+
+- `Rank-Weighted Activity`: higher weight for higher-ranked terms over the selected window.
+- `Presence`: how often a term appears in snapshots in the selected window.
+- `Momentum`: net change in rank-weighted activity between adjacent windows (up/down movement).
+- `Freshness Ratio`: term presence ratio `(10m/60m)` at sample time.
 
 ## Meta Page
 
@@ -104,6 +111,28 @@ Meta page: cycles focused metric-help target and pointer.
 - Pointer highlights the currently selected meta-help metric.
 - `Metric (M: next): ...` explains the focused metric.
 - Includes anomaly flags, summary interpretation, and recent state transitions.
+
+### Meta metric focus (`M`)
+
+- `M` does not change the page layout.
+- It moves the focus pointer across the listed meta metrics.
+- The `Metric (M: next): ...` line always describes the currently focused metric.
+
+### Meta metrics (displayed list)
+
+- `Entropy`: diversity of attention across terms in the selected window.
+- `Top-1 Share`: concentration measure; fraction of total activity owned by the top term.
+- `New-Term Rate`: share of currently active terms not seen in the earlier comparison window.
+- `Turnover`: top-set change rate versus the previous comparison window.
+- `Mean Freshness`: average per-term freshness ratio `(10m/60m)`.
+- `Max Freshness`: highest per-term freshness ratio `(10m/60m)`.
+- `Active Unique Terms`: count of distinct active terms in the selected window.
+
+## Sparkline scaling modes (`S`)
+
+- `per-term`: each term sparkline is scaled independently (best intra-term shape visibility).
+- `global`: all term sparklines share one scale (best absolute comparability).
+- `global-sqrt`: global scale with square-root compression (reduces domination by extreme values while preserving comparability).
 
 ## Metrics Notes
 
