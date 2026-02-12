@@ -298,6 +298,11 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--history-points", type=int, default=20, help="Sparkline points per term")
     parser.add_argument("--once", action="store_true", help="Render once and exit")
+    parser.add_argument(
+        "--start-fresh",
+        action="store_true",
+        help="Clear terms/meta/state log files at startup, then continue running",
+    )
     parser.add_argument("--log-interval", type=float, default=31.0, help="Embedded logger poll interval seconds")
     parser.add_argument(
         "--log-endpoint",
@@ -887,6 +892,28 @@ def rotate_legacy_base_file(base_path: str, log_type: str, day_str: str | None =
         pass
 
 
+def clear_logs_for_type(base_path: str, log_type: str) -> int:
+    deleted = 0
+    for path in list_rotated_log_files(base_path, log_type):
+        try:
+            os.remove(path)
+            deleted += 1
+        except OSError:
+            pass
+
+    # Also clear legacy undated base file when present.
+    if base_path:
+        base_name = os.path.basename(base_path)
+        if not LOG_DATE_RE.match(base_name) and os.path.isfile(base_path):
+            try:
+                os.remove(base_path)
+                deleted += 1
+            except OSError:
+                pass
+
+    return deleted
+
+
 def format_duration(seconds: float) -> str:
     secs = max(0, int(seconds))
     if secs >= 3600:
@@ -912,9 +939,9 @@ def state_status_line(state: State, now_utc: datetime, use_color: bool, width: i
         dot = f"\x1b[{code}m●\x1b[0m"
     if width < 110:
         th = "adp" if state.current_threshold_mode == "adaptive" else "fb"
-        return fit_line(f"STATE: {dot} {active} {duration} | CONF: {conf_txt} | TH: {th}", width)
+        return fit_line(f"STATE: {dot} {active} (active {duration}) | CONF: {conf_txt} | TH: {th}", width)
     return fit_line(
-        f"SYSTEM STATE: {dot} {active} ({duration}) | CONF: {conf_txt} | thresholds={state.current_threshold_mode}",
+        f"SYSTEM STATE: {dot} {active} (active for {duration}) | CONF: {conf_txt} | thresholds={state.current_threshold_mode}",
         width,
     )
 
@@ -959,6 +986,28 @@ def append_state_transition_csv(
         if not file_exists:
             writer.writeheader()
         writer.writerow(row)
+
+
+def should_skip_transition_duplicate(path: str, old_state: str, new_state: str, window_minutes: int) -> bool:
+    if not os.path.exists(path):
+        return False
+    try:
+        last_row: Dict[str, str] | None = None
+        with open(path, "r", encoding="utf-8", newline="") as f:
+            reader = csv.DictReader(f)
+            for row in reader:
+                last_row = row
+        if not last_row:
+            return False
+        last_old = (last_row.get("old_state") or "").strip()
+        last_new = (last_row.get("new_state") or "").strip()
+        try:
+            last_w = int((last_row.get("window_minutes") or "0").strip() or "0")
+        except ValueError:
+            last_w = 0
+        return (last_old == old_state) and (last_new == new_state) and (last_w == int(window_minutes))
+    except Exception:
+        return False
 
 
 def point_key_for_window(snapshots: List[Snapshot], meta_points: List[MetaPoint], window_minutes: int) -> str:
@@ -1052,10 +1101,36 @@ def update_runtime_state(
         state.current_threshold_mode = threshold_mode
         state.state_started_at = now_utc
 
+    prev_conf_label = state.current_conf_label
+    prev_conf_trend = state.conf_drift_suffix
+
     new_point = (point_key != state.last_state_point_key)
     if new_point:
         state.last_state_point_key = point_key
         update_confidence_drift(state, conf_value)
+
+        # Log confidence-only updates as state->state rows.
+        conf_label_changed = (conf_label != prev_conf_label)
+        conf_trend_changed = (state.conf_drift_suffix != prev_conf_trend)
+        if (
+            logger_enabled
+            and state.current_state
+            and candidate_state == state.current_state
+            and (conf_label_changed or conf_trend_changed)
+        ):
+            started = state.state_started_at or now_utc
+            active_duration = max(0.0, (now_utc - started).total_seconds())
+            append_state_transition_csv(
+                path=transition_csv_path,
+                timestamp_utc=now_utc,
+                old_state=state.current_state,
+                new_state=state.current_state,
+                old_duration_sec=active_duration,
+                conf_now=conf_label,
+                conf_delta=state.conf_delta,
+                conf_trend=state.conf_drift_suffix or "flat",
+                window_minutes=state.window_minutes,
+            )
 
     if candidate_state == state.current_state:
         state.pending_state = ""
@@ -1083,17 +1158,20 @@ def update_runtime_state(
                 f"(after {format_duration(old_duration)}) at {format_local_dt(now_utc, include_date=False)}"
             )
             if logger_enabled:
-                append_state_transition_csv(
-                    path=transition_csv_path,
-                    timestamp_utc=now_utc,
-                    old_state=old_state,
-                    new_state=candidate_state,
-                    old_duration_sec=old_duration,
-                    conf_now=conf_label,
-                    conf_delta=state.conf_delta,
-                    conf_trend=state.conf_drift_suffix or "flat",
-                    window_minutes=state.window_minutes,
-                )
+                if not should_skip_transition_duplicate(
+                    transition_csv_path, old_state, candidate_state, state.window_minutes
+                ):
+                    append_state_transition_csv(
+                        path=transition_csv_path,
+                        timestamp_utc=now_utc,
+                        old_state=old_state,
+                        new_state=candidate_state,
+                        old_duration_sec=old_duration,
+                        conf_now=conf_label,
+                        conf_delta=state.conf_delta,
+                        conf_trend=state.conf_drift_suffix or "flat",
+                        window_minutes=state.window_minutes,
+                    )
 
     state.current_conf_label = conf_label
     state.current_conf_value = conf_value
@@ -2271,7 +2349,7 @@ def build_render_meta(
                 trend_part = "●"
             w_part = format_window_label(t.window_minutes) if t.window_minutes > 0 else format_window_label(state.window_minutes)
             line = (
-                f"{ts_short} {from_dot} {t.old_state} -> {to_dot} {t.new_state} ({t.old_duration}) | "
+                f"{ts_short} {from_dot} {t.old_state} ({t.old_duration}) -> {to_dot} {t.new_state} | "
                 f"conf={conf_part} | {trend_part} | w={w_part}"
             )
             change_lines.append(line)
@@ -2373,6 +2451,11 @@ def main() -> int:
     args.csv = args.csv or os.path.join(log_dir, "terms.csv")
     args.meta_csv = args.meta_csv or os.path.join(log_dir, "meta.csv")
     args.state_log_csv = args.state_log_csv or os.path.join(log_dir, "state.csv")
+
+    if args.start_fresh:
+        clear_logs_for_type(args.csv, "terms")
+        clear_logs_for_type(args.meta_csv, "meta")
+        clear_logs_for_type(args.state_log_csv, "state")
 
     try:
         # Improve Unicode rendering for blocks/sparklines on Windows terminals.
