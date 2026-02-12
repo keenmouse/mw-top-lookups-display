@@ -36,6 +36,16 @@ python C:\Users\jim\Scripts\mw-top-lookups-display\MWTopLookupsDisplay.py
 
 3. Use `Q` to quit.
 
+## Screenshots
+
+Main view:
+
+![Main view](docs/images/main-view.png)
+
+Meta view:
+
+![Meta view](docs/images/meta-view.png)
+
 ## Command Line Usage
 
 ```powershell
