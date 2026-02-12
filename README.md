@@ -40,11 +40,11 @@ python C:\Users\jim\Scripts\mw-top-lookups-display\MWTopLookupsDisplay.py
 
 Main view:
 
-![Main view](docs/images/main-view.png)
+![Main view](docs/images/main-view.png?v=20260212-1)
 
 Meta view:
 
-![Meta view](docs/images/meta-view.png)
+![Meta view](docs/images/meta-view.png?v=20260212-1)
 
 ## Command Line Usage
 
