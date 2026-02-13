@@ -7,6 +7,7 @@ Controls:
   A     : auto-fit window to all available data
   V     : toggle Main/Meta view
   F     : toggle ignored-term filter
+  P     : toggle CURRENT SNAPSHOT section (Main view)
   M     : next metric (Main: chart metric, Meta: highlighted metric-help target)
   S     : cycle sparkline scaling (per-term / global / global-sqrt)
   C     : toggle compact/full header
@@ -248,6 +249,7 @@ class State:
     spark_scale: str = "global-sqrt"
     meta_help_idx: int = 0
     compact_header: bool = False
+    show_snapshot: bool = False
     state_eval_note: str = ""
     state_eval_window_minutes: int = 0
 
@@ -851,7 +853,7 @@ def current_meta_help_metric(state: State) -> str:
 def controls_line(state: State, use_color: bool = False) -> str:
     base = "+/- window  A all-data  V main/meta  F ignored-filter"
     normalize_seg = "  N normalize" if state.filter_sticky else ""
-    tail_main = f"S spark  C compact{normalize_seg}  Q quit"
+    tail_main = f"P snapshot  S spark  C compact{normalize_seg}  Q quit"
     tail_meta = f"C compact{normalize_seg}  Q quit"
     m_label = "M metric"
     if state.screen_mode == "meta":
@@ -1016,6 +1018,52 @@ def format_duration(seconds: float) -> str:
         m = secs // 60
         return f"{m}m"
     return f"{secs}s"
+
+
+def format_duration_precise(seconds: float) -> str:
+    secs = max(0, int(seconds))
+    if secs >= 3600:
+        h = secs // 3600
+        m = (secs % 3600) // 60
+        s = secs % 60
+        return f"{h}h{m:02d}m{s:02d}s"
+    if secs >= 60:
+        m = secs // 60
+        s = secs % 60
+        return f"{m}m{s:02d}s"
+    return f"{secs}s"
+
+
+def window_coverage_line(
+    window_snaps: List[Snapshot],
+    all_snaps: List[Snapshot],
+    window_minutes: int,
+    min_fill: float,
+    retain_days: int,
+    use_color: bool,
+) -> str:
+    if not all_snaps:
+        return ""
+    sample_span_seconds = 0.0
+    if window_snaps:
+        sample_span_seconds = max(0.0, (window_snaps[-1].ts_utc - window_snaps[0].ts_utc).total_seconds())
+    expected_interval = estimate_expected_interval_seconds([s.ts_utc for s in window_snaps], default_seconds=30.0) if window_snaps else 30.0
+    effective_seconds = min(float(max(1, int(window_minutes)) * 60), sample_span_seconds + expected_interval)
+    effective_minutes = effective_seconds / 60.0
+    w = max(1, int(window_minutes))
+    fill_pct = min(100.0, (effective_minutes / float(w)) * 100.0)
+    total_seconds = max(0.0, (all_snaps[-1].ts_utc - all_snaps[0].ts_utc).total_seconds()) if len(all_snaps) >= 2 else 0.0
+    line = (
+        f"DATA COVERAGE: {fill_pct:.1f}% of {format_window_label(w)} (span {format_duration_precise(sample_span_seconds)})"
+        f" | total {format_duration_precise(total_seconds)} | retain {max(1, int(retain_days))}d"
+    )
+    threshold_pct = max(0.0, min(100.0, float(min_fill) * 100.0))
+    if fill_pct < threshold_pct:
+        warning = f"LOW COVERAGE (<{threshold_pct:.0f}% target)"
+        if use_color:
+            warning = f"\x1b[31m{warning}\x1b[0m"
+        line += f" | {warning}"
+    return line
 
 
 def state_status_line(state: State, now_utc: datetime, use_color: bool, width: int) -> str:
@@ -1967,6 +2015,7 @@ def build_render(
     color_mode: str,
     retain_days: int,
     gap_pct_threshold: float,
+    state_min_fill: float,
 ) -> str:
     size = shutil.get_terminal_size((140, 40))
     width = size.columns
@@ -2003,28 +2052,17 @@ def build_render(
         f"MW Top Lookups Display ({state.screen_mode}) | Metric: {selected_metric_label} | Window: {format_window_label(state.window_minutes)} | "
         f"FilterIgnored: {'ON' if state.filter_sticky else 'OFF'}"
         f"{normalize_part} | "
-        f"Logger: {'ON' if state.log_enabled else 'OFF'}"
+        f"Logger: file"
     )
     header_lines.append(state_status_line(state, now_utc, use_color, width))
     if state.state_eval_note:
         header_lines.append(state.state_eval_note)
+    cov_line = window_coverage_line(current_win, adjusted, state.window_minutes, state_min_fill, retain_days, use_color)
+    if cov_line:
+        header_lines.append(cov_line)
     if not state.compact_header:
         header_lines.append(controls_line(state, use_color))
-        header_lines.append(
-            f"Logger: {'ON' if state.log_enabled else 'OFF'} | Rotate: daily (local) | Retain: {max(1, int(retain_days))}d"
-        )
-        header_lines.append(f"Logger Status: {logger_status}")
-        total_selected = float(meta.get("total_score_selected", 0.0))
-        agg_freshness_window = (float(meta.get("total_score_10m", 0.0)) / total_selected) if total_selected > 0 else 0.0
-        header_lines.append(
-            f"Aggregate Freshness Ratio (10m/{format_window_label(state.window_minutes)}): {agg_freshness_window * 100.0:.1f}%"
-        )
-        header_lines.append(
-            f"{short_metric_label('entropy_selected', width)} ({format_window_label(state.window_minutes)}): {meta['entropy_selected']:.2f}"
-        )
-        header_lines.append(
-            f"{short_metric_label('active_unique_selected', width)} ({format_window_label(state.window_minutes)}): {int(meta['active_unique_selected'])}"
-        )
+        header_lines.append(f"Poll: {logger_status}")
         if state.filter_sticky:
             header_lines.append(f"Ignored terms: {len(sticky_words)}")
     header_lines.append("-" * width)
@@ -2221,9 +2259,23 @@ def build_render(
     out_lines: List[str] = list(header_lines)
     remaining = content_rows
 
-    snap_chunk = trim_section(snapshot_lines, remaining)
-    out_lines.extend(snap_chunk)
-    remaining -= len(snap_chunk)
+    if not state.compact_header:
+        total_selected = float(meta.get("total_score_selected", 0.0))
+        agg_freshness_window = (float(meta.get("total_score_10m", 0.0)) / total_selected) if total_selected > 0 else 0.0
+        summary_lines = [
+            f"Aggregate Freshness Ratio (10m/{format_window_label(state.window_minutes)}): {agg_freshness_window * 100.0:.1f}%",
+            f"{short_metric_label('entropy_selected', width)} ({format_window_label(state.window_minutes)}): {meta['entropy_selected']:.2f}",
+            f"{short_metric_label('active_unique_selected', width)} ({format_window_label(state.window_minutes)}): {int(meta['active_unique_selected'])}",
+            "",
+        ]
+        s_chunk = trim_section(summary_lines, remaining)
+        out_lines.extend(s_chunk)
+        remaining -= len(s_chunk)
+
+    if state.show_snapshot:
+        snap_chunk = trim_section(snapshot_lines, remaining)
+        out_lines.extend(snap_chunk)
+        remaining -= len(snap_chunk)
 
     if remaining > 0:
         if not selected:
@@ -2287,6 +2339,7 @@ def build_render_meta(
     gap_pct_threshold: float,
     spark_scale: str,
     adaptive_cap_hours: float,
+    state_min_fill: float,
 ) -> str:
     size = shutil.get_terminal_size((140, 40))
     width = size.columns
@@ -2298,6 +2351,7 @@ def build_render_meta(
         apply_filter_and_normalization(s, state.filter_sticky, state.normalize, sticky_words)
         for s in snapshots
     ]
+    selected_win_snaps, _, _ = windowed_snapshots(adjusted, state.window_minutes)
     now_utc = adjusted[-1].ts_utc if adjusted else datetime.now(timezone.utc)
     current_meta = compute_meta_metrics(adjusted, state.window_minutes)
     scoped_points = [p for p in meta_points if p.metric_window_minutes == state.window_minutes]
@@ -2365,17 +2419,24 @@ def build_render_meta(
         f"MW Top Lookups Display ({state.screen_mode}) | Window: {format_window_label(state.window_minutes)} | "
         f"FilterIgnored: {'ON' if state.filter_sticky else 'OFF'}"
         f"{normalize_part} | "
-        f"Logger: {'ON' if state.log_enabled else 'OFF'}"
+        f"Logger: file"
     )
     header_lines.append(state_status_line(state, now_utc, use_color, width))
     if state.state_eval_note:
         header_lines.append(state.state_eval_note)
+    cov_line = window_coverage_line(
+        selected_win_snaps,
+        adjusted,
+        state.window_minutes,
+        state_min_fill,
+        retain_days,
+        use_color,
+    )
+    if cov_line:
+        header_lines.append(cov_line)
     if not state.compact_header:
         header_lines.append(controls_line(state, use_color))
-        header_lines.append(
-            f"Logger: {'ON' if state.log_enabled else 'OFF'} | Rotate: daily (local) | Retain: {max(1, int(retain_days))}d"
-        )
-        header_lines.append(f"Logger Status: {logger_status}")
+        header_lines.append(f"Poll: {logger_status}")
     header_lines.append("-" * width)
     header_lines = [fit_line(line, width) for line in header_lines]
     # Reserve one row because main loop writes rendered + "\n".
@@ -2577,6 +2638,8 @@ def apply_key(state: State, key: str) -> bool:
         state.filter_sticky = not state.filter_sticky
         if not state.filter_sticky:
             state.normalize = False
+    elif key == "p":
+        state.show_snapshot = not state.show_snapshot
     elif key == "m":
         if state.screen_mode == "meta":
             if META_HELP_METRICS:
@@ -2786,6 +2849,7 @@ def main() -> int:
                 gap_pct_threshold=max(0.0, float(args.gap_pct_threshold)),
                 spark_scale=state.spark_scale,
                 adaptive_cap_hours=max(1.0, float(args.adaptive_cap_hours)),
+                state_min_fill=max(0.0, min(1.0, float(args.state_min_fill))),
             )
         else:
             rendered = build_render(
@@ -2799,6 +2863,7 @@ def main() -> int:
                 color_mode=args.color,
                 retain_days=max(1, int(args.retain_days)),
                 gap_pct_threshold=max(0.0, float(args.gap_pct_threshold)),
+                state_min_fill=max(0.0, min(1.0, float(args.state_min_fill))),
             )
 
         clear_screen()
@@ -2815,7 +2880,18 @@ def main() -> int:
             key = read_key()
             if key:
                 if key == "a":
-                    state.window_idx = choose_window_idx_for_span(dataset_span_minutes(snapshots))
+                    adjusted_for_auto = [
+                        apply_filter_and_normalization(s, state.filter_sticky, state.normalize, sticky_words)
+                        for s in snapshots
+                    ]
+                    auto_window, _ = choose_state_evaluation_window(
+                        WINDOW_PRESETS_MINUTES[-1] if WINDOW_PRESETS_MINUTES else state.window_minutes,
+                        adjusted_for_auto,
+                        meta_points,
+                        float(args.adaptive_cap_hours),
+                        float(args.state_min_fill),
+                    )
+                    state.window_idx = choose_window_idx_for_span(auto_window)
                     key = None
                 if key is None:
                     # Redraw on next outer-loop iteration.
