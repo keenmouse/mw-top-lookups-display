@@ -319,6 +319,12 @@ def parse_args() -> argparse.Namespace:
         help="Gap threshold as fraction above expected interval (default: 0.50)",
     )
     parser.add_argument(
+        "--adaptive-cap-hours",
+        type=float,
+        default=24.0,
+        help="Adaptive state-threshold history cap in hours (default: 24)",
+    )
+    parser.add_argument(
         "--spark-scale",
         choices=["per-term", "global", "global-sqrt"],
         default="global-sqrt",
@@ -604,6 +610,15 @@ def metric_value_from_point(point: MetaPoint, key: str) -> float:
     return 0.0
 
 
+def recent_meta_points(points: List[MetaPoint], max_age: timedelta = timedelta(days=1)) -> List[MetaPoint]:
+    if not points:
+        return []
+    # Anchor to newest available point so behavior is stable across restarts.
+    newest = points[-1].ts_utc
+    cutoff = newest - max_age
+    return [p for p in points if p.ts_utc >= cutoff]
+
+
 def fixed_thresholds(metric_key: str) -> Tuple[float, float]:
     # Conservative fallbacks while history is sparse.
     # Returns (low_threshold, high_threshold).
@@ -628,9 +643,12 @@ def bucket_label(value: float, low: float, high: float) -> str:
 def derive_metric_labels(
     current_metrics: Dict[str, object],
     scoped_points: List[MetaPoint],
+    adaptive_cap_hours: float = 24.0,
 ) -> Tuple[Dict[str, str], bool]:
-    # Adaptive once enough points exist for selected window.
-    use_adaptive = len(scoped_points) >= 60
+    # Adaptive mode uses only recent history to avoid stale regimes.
+    cap_hours = max(1.0, float(adaptive_cap_hours))
+    recent_points = recent_meta_points(scoped_points, timedelta(hours=cap_hours))
+    use_adaptive = len(recent_points) >= 60
     labels: Dict[str, str] = {}
     for key in ["E", "C", "N", "T", "S"]:
         if key == "E":
@@ -645,7 +663,7 @@ def derive_metric_labels(
             value = float(current_metrics.get("mean_spike_ratio_10m_60m", 0.0))
 
         if use_adaptive:
-            series = [metric_value_from_point(p, key) for p in scoped_points]
+            series = [metric_value_from_point(p, key) for p in recent_points]
             low = percentile(series, 0.10)
             high = percentile(series, 0.90)
         else:
@@ -657,8 +675,9 @@ def derive_metric_labels(
 def classify_system_state(
     current_metrics: Dict[str, object],
     scoped_points: List[MetaPoint],
+    adaptive_cap_hours: float = 24.0,
 ) -> Tuple[str, str, float, bool]:
-    labels, adaptive = derive_metric_labels(current_metrics, scoped_points)
+    labels, adaptive = derive_metric_labels(current_metrics, scoped_points, adaptive_cap_hours)
     E = labels["E"]
     C = labels["C"]
     N = labels["N"]
@@ -2197,6 +2216,7 @@ def build_render_meta(
     retain_days: int,
     gap_pct_threshold: float,
     spark_scale: str,
+    adaptive_cap_hours: float,
 ) -> str:
     size = shutil.get_terminal_size((140, 40))
     width = size.columns
@@ -2356,7 +2376,7 @@ def build_render_meta(
     )
     body_lines.append("")
 
-    labels, adaptive = derive_metric_labels(current_meta, scoped_points)
+    labels, adaptive = derive_metric_labels(current_meta, scoped_points, adaptive_cap_hours)
     flags: List[str] = []
     if labels["N"] == "high":
         flags.append("HIGH NOVELTY")
@@ -2374,7 +2394,7 @@ def build_render_meta(
         for flag in flags:
             body_lines.append(f" • {flag}")
 
-    system_state, _, _, _ = classify_system_state(current_meta, scoped_points)
+    system_state, _, _, _ = classify_system_state(current_meta, scoped_points, adaptive_cap_hours)
     summary_map = {
         "Distributed curiosity": "Entropy high + novelty high/normal + concentration low + turnover normal.",
         "Meme turbulence": "Turnover high + spike/novelty high with concentration low/normal.",
@@ -2546,7 +2566,8 @@ def main() -> int:
     startup_transitions = load_state_transitions(args.state_log_csv)
     startup_meta_points = load_meta_points(args.meta_csv)
     startup_scoped = [p for p in startup_meta_points if p.metric_window_minutes == state.window_minutes]
-    startup_threshold_mode = "adaptive" if len(startup_scoped) >= 60 else "fallback"
+    startup_recent = recent_meta_points(startup_scoped, timedelta(hours=max(1.0, float(args.adaptive_cap_hours))))
+    startup_threshold_mode = "adaptive" if len(startup_recent) >= 60 else "fallback"
     bootstrap_state_from_transitions(
         state=state,
         transitions=startup_transitions,
@@ -2610,7 +2631,9 @@ def main() -> int:
                     snapshots = load_snapshots(args.csv)
                     meta_metrics_window = compute_meta_metrics(snapshots, state.window_minutes)
                     scoped = [p for p in meta_points if p.metric_window_minutes == state.window_minutes]
-                    state_name, state_conf, _, _ = classify_system_state(meta_metrics_window, scoped)
+                    state_name, state_conf, _, _ = classify_system_state(
+                        meta_metrics_window, scoped, float(args.adaptive_cap_hours)
+                    )
                     meta_metrics_window["system_state"] = state_name
                     meta_metrics_window["state_confidence"] = state_conf
                     meta_path = rotated_log_path(args.meta_csv, "meta", local_day_str())
@@ -2633,7 +2656,9 @@ def main() -> int:
             ]
             metrics_for_state = compute_meta_metrics(adjusted_for_state, state.window_minutes)
             scoped_for_state = [p for p in meta_points if p.metric_window_minutes == state.window_minutes]
-            cand_state, cand_conf, cand_conf_value, adaptive = classify_system_state(metrics_for_state, scoped_for_state)
+            cand_state, cand_conf, cand_conf_value, adaptive = classify_system_state(
+                metrics_for_state, scoped_for_state, float(args.adaptive_cap_hours)
+            )
             threshold_mode = "adaptive" if adaptive else "fallback"
             point_key = point_key_for_window(snapshots, meta_points, state.window_minutes)
             now_state = adjusted_for_state[-1].ts_utc if adjusted_for_state else datetime.now(timezone.utc)
@@ -2662,6 +2687,7 @@ def main() -> int:
                 retain_days=max(1, int(args.retain_days)),
                 gap_pct_threshold=max(0.0, float(args.gap_pct_threshold)),
                 spark_scale=state.spark_scale,
+                adaptive_cap_hours=max(1.0, float(args.adaptive_cap_hours)),
             )
         else:
             rendered = build_render(

@@ -73,6 +73,9 @@ UI refresh interval.
 - `--log-interval <seconds>`
 Polling interval for the built-in logger.
 
+- `--adaptive-cap-hours <hours>`
+Cap for adaptive state-threshold history. Default is `24` (1 day).
+
 - `--ignore <pattern>`
 Ignore term or wildcard pattern. Repeatable.
 Example: `--ignore "chargo*" --ignore "wordle"`
@@ -150,7 +153,7 @@ Meta page: cycles focused metric-help target and pointer.
 
 ## System State
 
-- `System State` is inferred from meta metrics (entropy, concentration, novelty, turnover, freshness) using adaptive thresholds when enough history is available, otherwise fallback thresholds.
+- `System State` is inferred from meta metrics (entropy, concentration, novelty, turnover, freshness) using adaptive thresholds when enough recent history is available (capped by `--adaptive-cap-hours`, default 24h), otherwise fallback thresholds.
 - Header duration (`active for ...`) is how long the current state has been active.
 - On startup, the app restores state continuity from historical transition logs for the selected window when available.
 - In `RECENT STATE CHANGES`, the duration shown after the `from` state is how long that state lasted before transitioning.
