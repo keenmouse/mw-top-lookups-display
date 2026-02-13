@@ -6,6 +6,22 @@ The format is based on Keep a Changelog.
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-02-13
+
+### Changed
+- Header clarity and density improvements:
+  - `Logger` is now presented as source type (`file`) in preparation for future DB/web modes.
+  - Removed redundant source/status lines and consolidated poll/retention context.
+  - Moved Aggregate Freshness Ratio, Entropy, and Active Unique Terms below the horizontal rule on the Main page.
+- Added `P` keybind to toggle `CURRENT SNAPSHOT` section visibility in Main view (default OFF).
+- Reworked window coverage reporting:
+  - clearer coverage labeling
+  - coverage percentage now interval-adjusted for polling cadence
+  - explicit raw sample-span display
+  - low-coverage warning rendered as red text when below configured threshold.
+- Auto-fit (`A`) now aligns with state-evaluation logic by selecting the effective evaluable window rather than a simple span ceiling.
+- Screenshot tooling updated to match new render signatures/options.
+
 ## [0.3.0] - 2026-02-13
 
 ### Changed

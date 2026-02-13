@@ -224,6 +224,7 @@ def main() -> int:
         color_mode="on",
         retain_days=7,
         gap_pct_threshold=0.5,
+        state_min_fill=0.70,
     )
 
     state_meta = mod.State()
@@ -245,6 +246,7 @@ def main() -> int:
         gap_pct_threshold=0.5,
         spark_scale="global-sqrt",
         adaptive_cap_hours=24.0,
+        state_min_fill=0.70,
     )
 
     out_dir = repo_root / "docs" / "images"
