@@ -78,6 +78,9 @@ Polling interval for the built-in logger.
 - `--adaptive-cap-hours <hours>`
 Cap for adaptive state-threshold history. Default is `24` (1 day).
 
+- `--state-min-fill <ratio>`
+Minimum estimated fill ratio for state-eval window selection. Default is `0.70`.
+
 - `--ignore <pattern>`
 Ignore term or wildcard pattern. Repeatable.
 Example: `--ignore "chargo*" --ignore "wordle"`
@@ -156,8 +159,10 @@ Meta page: cycles focused metric-help target and pointer.
 ## System State
 
 - `System State` is inferred from meta metrics (entropy, concentration, novelty, turnover, freshness) using adaptive thresholds when enough recent history is available (capped by `--adaptive-cap-hours`, default 24h), otherwise fallback thresholds.
+- State evaluation window selection prefers the largest window with sufficient fill (controlled by `--state-min-fill`, default `0.70`).
 - Header duration (`active for ...`) is how long the current state has been active.
 - On startup, the app restores state continuity from historical transition logs for the selected window when available.
+- If the requested window is underfilled, the header shows a `STATE EVAL:` note indicating the effective evaluation window.
 - In `RECENT STATE CHANGES`, the duration shown after the `from` state is how long that state lasted before transitioning.
 - Trend symbols in transition rows represent confidence-direction drift only:
   - `▲` rising

@@ -248,6 +248,8 @@ class State:
     spark_scale: str = "global-sqrt"
     meta_help_idx: int = 0
     compact_header: bool = False
+    state_eval_note: str = ""
+    state_eval_window_minutes: int = 0
 
     @property
     def window_minutes(self) -> int:
@@ -323,6 +325,12 @@ def parse_args() -> argparse.Namespace:
         type=float,
         default=24.0,
         help="Adaptive state-threshold history cap in hours (default: 24)",
+    )
+    parser.add_argument(
+        "--state-min-fill",
+        type=float,
+        default=0.70,
+        help="Minimum estimated fill ratio for state-eval window selection (default: 0.70)",
     )
     parser.add_argument(
         "--spark-scale",
@@ -716,6 +724,71 @@ def classify_system_state(
         conf = "low"
 
     return best_state, conf, best_ratio, adaptive
+
+
+def choose_state_evaluation_window(
+    requested_window_minutes: int,
+    snapshots: List[Snapshot],
+    meta_points: List[MetaPoint],
+    adaptive_cap_hours: float,
+    state_min_fill: float,
+) -> Tuple[int, str]:
+    requested = max(1, int(requested_window_minutes))
+    span = max(1, int(dataset_span_minutes(snapshots))) if snapshots else 1
+    cap_window = min(requested, span)
+    min_fill = max(0.0, min(1.0, float(state_min_fill)))
+
+    times = [s.ts_utc for s in snapshots]
+    expected_interval = estimate_expected_interval_seconds(times, default_seconds=30.0)
+
+    def fill_ratio_for_window(window_minutes: int) -> float:
+        cur, _, _ = windowed_snapshots(snapshots, window_minutes)
+        if not cur:
+            return 0.0
+        expected_points = max(1, int(round((window_minutes * 60.0) / max(1.0, expected_interval))) + 1)
+        return min(1.0, len(cur) / float(expected_points))
+
+    # Look for the largest logged window <= available cap that has enough recent
+    # points for adaptive mode.
+    cap_td = timedelta(hours=max(1.0, float(adaptive_cap_hours)))
+    logged_windows = sorted({int(p.metric_window_minutes) for p in meta_points if int(p.metric_window_minutes) > 0 and int(p.metric_window_minutes) <= cap_window})
+    window_candidates = [w for w in WINDOW_PRESETS_MINUTES if w <= cap_window]
+    if cap_window not in window_candidates:
+        window_candidates.append(cap_window)
+    window_candidates = sorted(set(window_candidates))
+
+    filled_candidates = [w for w in window_candidates if fill_ratio_for_window(w) >= min_fill]
+
+    adaptive_candidates: List[int] = []
+    for w in logged_windows:
+        if w not in filled_candidates:
+            continue
+        if w > cap_window:
+            continue
+        scoped = [p for p in meta_points if p.metric_window_minutes == w]
+        recent = recent_meta_points(scoped, cap_td)
+        if len(recent) >= 60:
+            adaptive_candidates.append(w)
+
+    if adaptive_candidates:
+        effective = max(adaptive_candidates)
+    elif filled_candidates:
+        effective = max(filled_candidates)
+    else:
+        effective = cap_window
+
+    note = ""
+    if effective != requested:
+        note = (
+            f"STATE EVAL: requested {format_window_label(requested)} -> using {format_window_label(effective)} "
+            f"(largest window with sufficient data)"
+        )
+    elif not filled_candidates:
+        note = (
+            f"STATE EVAL: using {format_window_label(effective)} with low fill "
+            f"(min target {int(min_fill * 100)}%)"
+        )
+    return effective, note
 
 
 def color_enabled(color_mode: str) -> bool:
@@ -1149,34 +1222,29 @@ def update_runtime_state(
     point_key: str,
     logger_enabled: bool,
     transition_csv_path: str,
+    window_start_utc: datetime | None = None,
 ) -> None:
     if state.last_state_window_minutes != state.window_minutes:
-        # On window changes, bootstrap from persisted transition history when available.
-        restored = bootstrap_state_from_transitions(
-            state=state,
-            transitions=load_state_transitions(transition_csv_path),
-            window_minutes=state.window_minutes,
-            threshold_mode=threshold_mode,
-        )
+        # On window changes, re-evaluate directly from the currently selected window's data
+        # rather than restoring stale state from prior transition logs for that window.
         state.last_state_window_minutes = state.window_minutes
+        state.current_state = candidate_state
+        state.current_conf_label = conf_label
+        state.current_conf_value = conf_value
+        state.current_threshold_mode = threshold_mode
+        state.state_started_at = window_start_utc or now_utc
         state.prev_state = ""
         state.prev_state_duration_sec = 0.0
+        state.pending_state = ""
+        state.pending_count = 0
         state.last_state_point_key = point_key
-        if not restored:
-            state.current_state = candidate_state
-            state.current_conf_label = conf_label
-            state.current_conf_value = conf_value
-            state.current_threshold_mode = threshold_mode
-            state.state_started_at = now_utc
-            state.pending_state = ""
-            state.pending_count = 0
-            state.transition_banner_once = ""
-            state.conf_history = []
-            state.conf_delta = 0.0
-            state.conf_drift_suffix = ""
-            state.conf_up_streak = 0
-            state.conf_down_streak = 0
-            update_confidence_drift(state, conf_value)
+        state.transition_banner_once = ""
+        state.conf_history = []
+        state.conf_delta = 0.0
+        state.conf_drift_suffix = ""
+        state.conf_up_streak = 0
+        state.conf_down_streak = 0
+        update_confidence_drift(state, conf_value)
         return
 
     if not state.current_state:
@@ -1938,6 +2006,8 @@ def build_render(
         f"Logger: {'ON' if state.log_enabled else 'OFF'}"
     )
     header_lines.append(state_status_line(state, now_utc, use_color, width))
+    if state.state_eval_note:
+        header_lines.append(state.state_eval_note)
     if not state.compact_header:
         header_lines.append(controls_line(state, use_color))
         header_lines.append(
@@ -2298,6 +2368,8 @@ def build_render_meta(
         f"Logger: {'ON' if state.log_enabled else 'OFF'}"
     )
     header_lines.append(state_status_line(state, now_utc, use_color, width))
+    if state.state_eval_note:
+        header_lines.append(state.state_eval_note)
     if not state.compact_header:
         header_lines.append(controls_line(state, use_color))
         header_lines.append(
@@ -2568,7 +2640,16 @@ def main() -> int:
     # Restore state continuity across restarts when transition history exists.
     startup_transitions = load_state_transitions(args.state_log_csv)
     startup_meta_points = load_meta_points(args.meta_csv)
-    startup_scoped = [p for p in startup_meta_points if p.metric_window_minutes == state.window_minutes]
+    startup_eval_window, startup_note = choose_state_evaluation_window(
+        state.window_minutes,
+        load_snapshots(args.csv),
+        startup_meta_points,
+        float(args.adaptive_cap_hours),
+        float(args.state_min_fill),
+    )
+    state.state_eval_window_minutes = startup_eval_window
+    state.state_eval_note = startup_note
+    startup_scoped = [p for p in startup_meta_points if p.metric_window_minutes == startup_eval_window]
     startup_recent = recent_meta_points(startup_scoped, timedelta(hours=max(1.0, float(args.adaptive_cap_hours))))
     startup_threshold_mode = "adaptive" if len(startup_recent) >= 60 else "fallback"
     bootstrap_state_from_transitions(
@@ -2657,14 +2738,25 @@ def main() -> int:
                 apply_filter_and_normalization(s, state.filter_sticky, state.normalize, sticky_words)
                 for s in snapshots
             ]
-            metrics_for_state = compute_meta_metrics(adjusted_for_state, state.window_minutes)
-            scoped_for_state = [p for p in meta_points if p.metric_window_minutes == state.window_minutes]
+            eval_window, eval_note = choose_state_evaluation_window(
+                state.window_minutes,
+                adjusted_for_state,
+                meta_points,
+                float(args.adaptive_cap_hours),
+                float(args.state_min_fill),
+            )
+            state.state_eval_window_minutes = eval_window
+            state.state_eval_note = eval_note
+            metrics_for_state = compute_meta_metrics(adjusted_for_state, eval_window)
+            scoped_for_state = [p for p in meta_points if p.metric_window_minutes == eval_window]
             cand_state, cand_conf, cand_conf_value, adaptive = classify_system_state(
                 metrics_for_state, scoped_for_state, float(args.adaptive_cap_hours)
             )
             threshold_mode = "adaptive" if adaptive else "fallback"
-            point_key = point_key_for_window(snapshots, meta_points, state.window_minutes)
+            point_key = point_key_for_window(snapshots, meta_points, eval_window)
             now_state = adjusted_for_state[-1].ts_utc if adjusted_for_state else datetime.now(timezone.utc)
+            current_window_snaps, _, _ = windowed_snapshots(adjusted_for_state, eval_window)
+            window_start_utc = current_window_snaps[0].ts_utc if current_window_snaps else now_state
             update_runtime_state(
                 state=state,
                 candidate_state=cand_state,
@@ -2675,7 +2767,10 @@ def main() -> int:
                 point_key=point_key,
                 logger_enabled=True,
                 transition_csv_path=rotated_log_path(args.state_log_csv, "state", local_day_str()),
+                window_start_utc=window_start_utc,
             )
+        else:
+            state.state_eval_note = ""
 
         if state.screen_mode == "meta":
             rendered = build_render_meta(
