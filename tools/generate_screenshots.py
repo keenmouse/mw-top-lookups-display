@@ -244,6 +244,7 @@ def main() -> int:
         retain_days=7,
         gap_pct_threshold=0.5,
         spark_scale="global-sqrt",
+        adaptive_cap_hours=24.0,
     )
 
     out_dir = repo_root / "docs" / "images"

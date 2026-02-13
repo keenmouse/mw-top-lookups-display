@@ -7,6 +7,9 @@ The format is based on Keep a Changelog.
 ## [Unreleased]
 
 ### Changed
+- Adaptive state-threshold history is now capped to recent data by configurable CLI option:
+  - `--adaptive-cap-hours` (default `24`, i.e., 1 day)
+- State classification paths (runtime, logger updates, meta summary, startup mode selection) now consistently use the adaptive history cap.
 - Improved screenshot generation quality and consistency:
   - ANSI color-aware rendering
   - glyph fallback for block/arrow/sparkline symbols
