@@ -89,8 +89,8 @@ ANSI color mode.
 - `--once`
 Render once and exit.
 
-- `--start-fresh`
-Clear terms/meta/state logs at startup, then continue running.
+- `--clear-logs`
+Clear terms/meta/state logs and exit.
 
 ## Keyboard Controls
 
@@ -206,10 +206,10 @@ Run with defaults:
 python MWTopLookupsDisplay.py
 ```
 
-Start fresh (clear logs first), then run:
+Clear logs and exit:
 
 ```powershell
-python MWTopLookupsDisplay.py --start-fresh
+python MWTopLookupsDisplay.py --clear-logs
 ```
 
 Use custom log directory and 14-day retention:

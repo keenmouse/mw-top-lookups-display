@@ -299,9 +299,9 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--history-points", type=int, default=20, help="Sparkline points per term")
     parser.add_argument("--once", action="store_true", help="Render once and exit")
     parser.add_argument(
-        "--start-fresh",
+        "--clear-logs",
         action="store_true",
-        help="Clear terms/meta/state log files at startup, then continue running",
+        help="Clear terms/meta/state log files and exit",
     )
     parser.add_argument("--log-interval", type=float, default=31.0, help="Embedded logger poll interval seconds")
     parser.add_argument(
@@ -2538,10 +2538,13 @@ def main() -> int:
     args.meta_csv = args.meta_csv or os.path.join(log_dir, "meta.csv")
     args.state_log_csv = args.state_log_csv or os.path.join(log_dir, "state.csv")
 
-    if args.start_fresh:
-        clear_logs_for_type(args.csv, "terms")
-        clear_logs_for_type(args.meta_csv, "meta")
-        clear_logs_for_type(args.state_log_csv, "state")
+    if args.clear_logs:
+        deleted = 0
+        deleted += clear_logs_for_type(args.csv, "terms")
+        deleted += clear_logs_for_type(args.meta_csv, "meta")
+        deleted += clear_logs_for_type(args.state_log_csv, "state")
+        print(f"Cleared {deleted} log file(s).")
+        return 0
 
     try:
         # Improve Unicode rendering for blocks/sparklines on Windows terminals.
