@@ -6,6 +6,8 @@ The format is based on Keep a Changelog.
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-02-13
+
 ### Changed
 - Adaptive state-threshold history is now capped to recent data by configurable CLI option:
   - `--adaptive-cap-hours` (default `24`, i.e., 1 day)
@@ -36,7 +38,7 @@ The format is based on Keep a Changelog.
 - Built-in continuous logger with rotated CSV logs for terms, meta metrics, and state transitions.
 - Adaptive time windows and keyboard-driven interaction (`M`, `S`, `V`, `+/-`, `A`, etc.).
 - Ignore filtering with wildcard support via `--ignore`.
-- Log-clear option via `--clear-logs` (clear logs and exit).
+- Startup reset option via `--start-fresh`.
 - System-state classification, confidence trend indicators, and transition history.
 - Documentation upgrades including usage, controls, metrics, and screenshots.
 - Screenshot generation tooling in `tools/generate_screenshots.py`.
