@@ -1,0 +1,4 @@
+# Runtime dependencies for mw-top-lookups-display
+# Main TUI app uses Python standard library only.
+# Pillow is required for tools/generate_screenshots.py.
+Pillow>=10.0.0
