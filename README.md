@@ -4,6 +4,8 @@ MW Top Lookups Display is a terminal dashboard plus built-in logger for tracking
 
 It continuously polls the lookup endpoint, writes rotated CSV logs, computes trend and meta metrics, classifies system state, and renders a live TUI for short- and long-horizon analysis.
 
+It is designed to make meme and news-cycle effects visible in near real time, including surge/decay behavior, narrative convergence, novelty bursts, and attention turnover across terms.
+
 ## What It Does
 
 - Polls Merriam-Webster Top Lookups on an interval (default 31s).

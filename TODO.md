@@ -14,3 +14,13 @@
 
 - Add a Grafana dashboard web interface while retaining the TUI.
 - Add optional database logging backend while retaining file-based CSV logging.
+- Add `--mode tui|webui|both` once web UI + DB logging are implemented:
+  - `tui`: current terminal workflow
+  - `webui`: web stack/log pipeline without TUI loop
+  - `both`: run terminal and web stack concurrently
+
+## Research Assist
+
+- Add optional term-level research to help explain why a term is trending.
+- Support searching news, meme/community sources, and general web indicators for each term.
+- UI concept: show a `(research)` link/action next to each term in Main `TREND` rows.
