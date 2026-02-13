@@ -6,6 +6,17 @@ The format is based on Keep a Changelog.
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-02-13
+
+### Changed
+- State evaluation no longer resets incorrectly on window change; it now re-evaluates from current window data each cycle.
+- Added `--state-min-fill` (default `0.70`) to control minimum estimated window fill for state-eval window selection.
+- State evaluation now chooses the largest sufficiently filled/evaluable window and displays a `STATE EVAL:` header note when it downshifts from the requested window.
+- `--clear-logs` behavior is clear-and-exit for short-session workflows.
+- Expanded docs and roadmap:
+  - README intro clarifies meme/news-cycle effects and state-eval behavior.
+  - TODO now includes Grafana/web interface, optional DB logging, `--mode tui|webui|both`, and term-level `(research)` assist ideas.
+
 ## [0.2.0] - 2026-02-13
 
 ### Changed
