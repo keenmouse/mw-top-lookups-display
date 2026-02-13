@@ -5,6 +5,11 @@ All notable changes to this project will be documented in this file.
 The format is based on Keep a Changelog.
 
 ## [Unreleased]
+### Removed
+- Removed screenshot generation tooling (`tools/generate_screenshots.py`) from the project.
+
+### Changed
+- `requirements.txt` now reflects stdlib-only project dependencies.
 
 ## [0.4.0] - 2026-02-13
 
