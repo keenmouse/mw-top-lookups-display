@@ -23,7 +23,7 @@ The format is based on Keep a Changelog.
   - suppress duplicate consecutive `old_state -> new_state` transition rows
   - log `state -> state` rows on confidence label/trend changes
   - preserve state-duration continuity by ignoring confidence-only self-transitions as state-start anchors
-- Added startup reset flag `--start-fresh` to clear logs at launch.
+- Replaced startup reset behavior with `--clear-logs` (clear logs and exit).
 - Main view readability improvements:
   - adaptive blank-line spacing for TREND and HISTORY when enough rows fit
   - HISTORY/TREND layout threshold tuned for smaller terminals
@@ -36,7 +36,7 @@ The format is based on Keep a Changelog.
 - Built-in continuous logger with rotated CSV logs for terms, meta metrics, and state transitions.
 - Adaptive time windows and keyboard-driven interaction (`M`, `S`, `V`, `+/-`, `A`, etc.).
 - Ignore filtering with wildcard support via `--ignore`.
-- Startup reset option via `--start-fresh`.
+- Log-clear option via `--clear-logs` (clear logs and exit).
 - System-state classification, confidence trend indicators, and transition history.
 - Documentation upgrades including usage, controls, metrics, and screenshots.
 - Screenshot generation tooling in `tools/generate_screenshots.py`.
