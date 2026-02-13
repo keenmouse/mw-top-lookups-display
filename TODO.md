@@ -8,7 +8,6 @@
   - macOS: `~/Library/Application Support/MWTopLookups/logs`
   - Windows: keep `%LOCALAPPDATA%\\MWTopLookups\\logs`
 - Add optional `--portable` mode that stores logs under the working directory (for example `./logs`) without changing the default behavior.
-- Make screenshot font selection platform-aware (avoid Windows-only font assumptions in `tools/generate_screenshots.py`).
 
 ## Next Platform
 
