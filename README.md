@@ -25,6 +25,7 @@ It is designed to make meme and news-cycle effects visible in near real time, in
 
 - Windows terminal with at least 80 columns x 24 rows.
 - Python 3.10+ recommended.
+- No third-party Python packages required (stdlib only).
 - Network access to the endpoint.
 
 ## Quick Start
