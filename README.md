@@ -43,11 +43,15 @@ python MWTopLookupsDisplay.py
 
 Main view:
 
-![Main view](docs/images/main-view.png?v=20260212-1)
+![Main view (compact, rank-weighted)](docs/images/main-view.png?v=20260213-2)
+
+Main view (expanded, momentum):
+
+![Main view (expanded, momentum)](docs/images/main-view-expanded-momentum.png?v=20260213-2)
 
 Meta view:
 
-![Meta view](docs/images/meta-view.png?v=20260212-1)
+![Meta view](docs/images/meta-view.png?v=20260213-2)
 
 ## Command Line Usage
 
